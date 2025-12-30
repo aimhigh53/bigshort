@@ -1,6 +1,14 @@
 import { createClient } from '@/lib/supabase'
 import { NextRequest, NextResponse } from 'next/server'
 
+// 실투자금 계산 함수
+function calculateRequiredInvestment(minimumPrice: number): number {
+  const depositAndBalance = minimumPrice * 0.2
+  const acquisitionTax = minimumPrice * 0.013
+  const miscCost = 3000000
+  return Math.round(depositAndBalance + acquisitionTax + miscCost)
+}
+
 export async function GET(request: NextRequest) {
   const supabase = createClient()
   const searchParams = request.nextUrl.searchParams
@@ -14,21 +22,11 @@ export async function GET(request: NextRequest) {
   const propertyType = searchParams.get('propertyType') || 'APT'
 
   try {
-    // filtered_auction_items 뷰 사용
+    // auction_items 테이블 조회
     let query = supabase
-      .from('filtered_auction_items')
+      .from('auction_items')
       .select('*')
       .eq('property_type', propertyType)
-
-    // 회전율 필터
-    if (minTurnoverRate > 0) {
-      query = query.gte('turnover_rate', minTurnoverRate)
-    }
-
-    // 실투자금 필터
-    if (maxInvestment > 0) {
-      query = query.lte('required_investment', maxInvestment)
-    }
 
     // 유찰횟수 필터
     if (failCounts.length > 0) {
@@ -48,40 +46,106 @@ export async function GET(request: NextRequest) {
     // 매각기일 순 정렬
     query = query.order('auction_date', { ascending: true })
 
-    const { data, error } = await query
+    const { data: auctionData, error: auctionError } = await query
 
-    if (error) {
-      console.error('Supabase error:', error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
+    if (auctionError) {
+      console.error('Supabase error:', auctionError)
+      return NextResponse.json({ error: auctionError.message }, { status: 500 })
     }
 
-    // 응답 데이터 변환
-    const items = data?.map(item => ({
-      id: item.id,
-      caseNumber: item.case_number,
-      court: item.court,
-      propertyType: item.property_type,
-      address: item.address,
-      sido: item.sido,
-      sigungu: item.sigungu,
-      dong: item.dong,
-      apartmentName: item.apartment_name,
-      dongHo: item.dong_ho,
-      areaM2: item.area_m2,
-      areaPy: item.area_py,
-      appraisalPrice: item.appraisal_price,
-      minimumPrice: item.minimum_price,
-      discountRate: item.discount_rate,
-      failCount: item.fail_count,
-      auctionDate: item.auction_date,
-      isSafe: item.is_safe,
-      rightsAnalysis: item.rights_analysis,
-      turnoverRate: item.turnover_rate,
-      avgDealPrice: item.avg_deal_price,
-      requiredInvestment: item.required_investment,
-      sourceUrl: item.source_url,
-      imageUrls: item.image_urls,
-    })) || []
+    // turnover_rates 테이블 조회
+    const itemIds = (auctionData || []).map((item: { id: string }) => item.id)
+    const { data: turnoverData } = await supabase
+      .from('turnover_rates')
+      .select('*')
+      .in('auction_item_id', itemIds)
+
+    // 회전율 데이터를 맵으로 변환
+    const turnoverMap = new Map<string, { turnover_rate: number; avg_deal_price: number | null }>()
+    ;(turnoverData || []).forEach((tr: { auction_item_id: string; turnover_rate: number; avg_deal_price: number | null }) => {
+      turnoverMap.set(tr.auction_item_id, {
+        turnover_rate: tr.turnover_rate,
+        avg_deal_price: tr.avg_deal_price
+      })
+    })
+
+    // 응답 데이터 변환 및 필터링
+    interface AuctionItemRow {
+      id: string
+      case_number: string
+      court: string
+      property_type: string
+      address: string
+      sido: string
+      sigungu: string
+      dong: string | null
+      apartment_name: string | null
+      dong_ho: string | null
+      area_m2: number
+      area_py: number
+      appraisal_price: number
+      minimum_price: number
+      discount_rate: number
+      fail_count: number
+      auction_date: string | null
+      is_safe: boolean
+      rights_analysis: string | null
+      source_url: string | null
+      image_urls: string[] | null
+    }
+
+    const allItems = (auctionData || []).map((item: AuctionItemRow) => {
+      const tr = turnoverMap.get(item.id)
+      const requiredInvestment = calculateRequiredInvestment(item.minimum_price)
+
+      // Parse dong_ho for floor info (e.g., "101동 1501호" -> floor: 15)
+      let floor = 0
+      if (item.dong_ho) {
+        const hoMatch = item.dong_ho.match(/(\d+)호/)
+        if (hoMatch) {
+          floor = Math.floor(parseInt(hoMatch[1]) / 100)
+        }
+      }
+
+      return {
+        id: item.id,
+        case_number: item.case_number,
+        court: item.court,
+        property_type: item.property_type,
+        address: item.address,
+        region: item.sido,
+        city: item.sigungu,
+        apartment_name: item.apartment_name || '아파트',
+        dong: item.dong || item.dong_ho?.split(' ')[0] || '',
+        floor: floor,
+        area_m2: item.area_m2,
+        area_pyeong: item.area_py,
+        appraisal_price: item.appraisal_price,
+        minimum_price: item.minimum_price,
+        discount_rate: item.discount_rate,
+        fail_count: item.fail_count,
+        auction_date: item.auction_date,
+        is_safe: item.is_safe,
+        turnover_rate: tr?.turnover_rate ?? 0,
+        required_investment: requiredInvestment,
+        risk_factors: [],
+        source_url: item.source_url || '',
+        image_url: item.image_urls?.[0] || null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }
+    })
+
+    // 클라이언트 사이드 필터링 (회전율, 실투자금)
+    const items = allItems.filter(item => {
+      if (minTurnoverRate > 0 && (item.turnover_rate === null || item.turnover_rate < minTurnoverRate)) {
+        return false
+      }
+      if (maxInvestment > 0 && item.required_investment > maxInvestment) {
+        return false
+      }
+      return true
+    })
 
     return NextResponse.json({
       items,
@@ -114,10 +178,31 @@ export async function POST(request: NextRequest) {
     }
 
     // Upsert 처리 (case_number 기준)
+    interface InputItem {
+      caseNumber: string
+      court: string
+      propertyType?: string
+      address: string
+      sido: string
+      sigungu: string
+      dong?: string
+      apartmentName?: string
+      dongHo?: string
+      areaM2: number
+      appraisalPrice: number
+      minimumPrice: number
+      failCount?: number
+      auctionDate?: string
+      isSafe?: boolean
+      rightsAnalysis?: string
+      sourceUrl?: string
+      imageUrls?: string[]
+    }
+
     const { data, error } = await supabase
       .from('auction_items')
       .upsert(
-        items.map((item: Record<string, unknown>) => ({
+        items.map((item: InputItem) => ({
           case_number: item.caseNumber,
           court: item.court,
           property_type: item.propertyType || 'APT',

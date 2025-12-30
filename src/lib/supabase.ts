@@ -1,15 +1,34 @@
-import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { createClient as createSupabaseClient, SupabaseClient } from '@supabase/supabase-js'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+// 싱글톤 클라이언트 (지연 초기화)
+let supabaseInstance: SupabaseClient | null = null
 
-// 싱글톤 클라이언트
-export const supabase = createSupabaseClient<Database>(supabaseUrl, supabaseAnonKey)
+export function getSupabase(): SupabaseClient {
+  if (supabaseInstance) return supabaseInstance
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error('Supabase 환경변수가 설정되지 않았습니다.')
+  }
+
+  supabaseInstance = createSupabaseClient(supabaseUrl, supabaseAnonKey)
+  return supabaseInstance
+}
 
 // 새 클라이언트 생성 함수 (API 라우트용)
-export function createClient() {
-  return createSupabaseClient<Database>(supabaseUrl, supabaseAnonKey)
+export function createClient(): SupabaseClient {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co'
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-key'
+
+  return createSupabaseClient(supabaseUrl, supabaseAnonKey)
 }
+
+// 하위 호환성을 위한 export (빌드 타임에는 사용 불가)
+export const supabase = {
+  from: () => { throw new Error('Use createClient() instead') }
+} as unknown as SupabaseClient
 
 // Database Types (migration 스키마 기준)
 export type Database = {

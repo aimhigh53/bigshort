@@ -1,42 +1,26 @@
 'use client'
 
-import { useState, useMemo } from 'react'
-import { TrendingDown } from 'lucide-react'
+import { useState } from 'react'
+import { TrendingDown, Loader2, RefreshCw } from 'lucide-react'
 import { FilterPanel, AuctionCard, BottomNav } from '@/components'
-import { sampleAuctionItems, filterAuctionItems } from '@/lib/sampleData'
+import { useAuctionItems, useFavorites } from '@/lib/hooks'
 
 type TabType = 'dashboard' | 'favorites' | 'notifications' | 'settings'
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<TabType>('dashboard')
-  const [favorites, setFavorites] = useState<string[]>([])
 
   const [filters, setFilters] = useState({
-    minTurnoverRate: 3.0,
-    maxInvestment: 50000000,
-    failCountFilter: [1, 2],
-    safeOnly: true,
+    minTurnoverRate: 0,
+    maxInvestment: 100000000,
+    failCountFilter: [0, 1, 2, 3],
+    safeOnly: false,
   })
 
-  const filteredItems = useMemo(() => {
-    return filterAuctionItems(sampleAuctionItems, filters)
-  }, [filters])
+  const { items: filteredItems, loading, error, refetch, stats } = useAuctionItems(filters)
+  const { favorites, toggleFavorite, isFavorite } = useFavorites()
 
-  const averageDiscount = useMemo(() => {
-    if (filteredItems.length === 0) return 0
-    const total = filteredItems.reduce((sum, item) => sum + item.discount_rate, 0)
-    return Math.round(total / filteredItems.length)
-  }, [filteredItems])
-
-  const handleFavorite = (id: string) => {
-    setFavorites(prev =>
-      prev.includes(id)
-        ? prev.filter(f => f !== id)
-        : [...prev, id]
-    )
-  }
-
-  const favoriteItems = sampleAuctionItems.filter(item => favorites.includes(item.id))
+  const favoriteItems = filteredItems.filter(item => favorites.includes(item.id))
 
   return (
     <div className="min-h-screen bg-background pb-20">
@@ -70,28 +54,55 @@ export default function Home() {
             <div className="flex items-center justify-between py-3">
               <div className="flex items-center gap-2">
                 <span className="text-muted-foreground">필터링 결과:</span>
-                <span className="text-primary font-bold">{filteredItems.length}건</span>
+                <span className="text-primary font-bold">{stats.count}건</span>
+                <button
+                  onClick={refetch}
+                  className="p-1 hover:bg-muted rounded"
+                  title="새로고침"
+                >
+                  <RefreshCw className={`w-4 h-4 text-muted-foreground ${loading ? 'animate-spin' : ''}`} />
+                </button>
               </div>
               <div className="flex items-center gap-2">
                 <TrendingDown className="w-4 h-4 text-destructive" />
                 <span className="text-muted-foreground">평균 할인율:</span>
-                <span className="text-destructive font-bold">{averageDiscount}%</span>
+                <span className="text-destructive font-bold">{stats.avgDiscount}%</span>
               </div>
             </div>
 
-            {/* Auction Items Grid */}
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {filteredItems.map(item => (
-                <AuctionCard
-                  key={item.id}
-                  item={item}
-                  onFavorite={handleFavorite}
-                  isFavorite={favorites.includes(item.id)}
-                />
-              ))}
-            </div>
+            {/* Loading State */}
+            {loading && (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                <span className="ml-2 text-muted-foreground">데이터 로딩 중...</span>
+              </div>
+            )}
 
-            {filteredItems.length === 0 && (
+            {/* Error State */}
+            {error && (
+              <div className="text-center py-12 text-destructive">
+                <p>{error}</p>
+                <button onClick={refetch} className="mt-2 text-sm underline">
+                  다시 시도
+                </button>
+              </div>
+            )}
+
+            {/* Auction Items Grid */}
+            {!loading && !error && (
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {filteredItems.map(item => (
+                  <AuctionCard
+                    key={item.id}
+                    item={item}
+                    onFavorite={toggleFavorite}
+                    isFavorite={isFavorite(item.id)}
+                  />
+                ))}
+              </div>
+            )}
+
+            {!loading && !error && filteredItems.length === 0 && (
               <div className="text-center py-12">
                 <p className="text-muted-foreground">필터 조건에 맞는 물건이 없습니다.</p>
                 <p className="text-sm text-muted-foreground mt-2">필터를 조정해보세요.</p>
@@ -102,14 +113,14 @@ export default function Home() {
 
         {activeTab === 'favorites' && (
           <div className="space-y-4">
-            <h2 className="text-lg font-semibold">관심 물건</h2>
+            <h2 className="text-lg font-semibold">관심 물건 ({favoriteItems.length}건)</h2>
             {favoriteItems.length > 0 ? (
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                 {favoriteItems.map(item => (
                   <AuctionCard
                     key={item.id}
                     item={item}
-                    onFavorite={handleFavorite}
+                    onFavorite={toggleFavorite}
                     isFavorite={true}
                   />
                 ))}
@@ -142,13 +153,13 @@ export default function Home() {
               <h3 className="font-medium mb-2">데이터 소스</h3>
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground">현재: 샘플 데이터</p>
+                  <p className="text-sm text-muted-foreground">현재: Supabase 실시간 데이터</p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Supabase 연동 시 실시간 데이터 사용
+                    경매 물건 {stats.count}건 연동 중
                   </p>
                 </div>
-                <div className="px-3 py-1 bg-yellow-500/20 text-yellow-500 rounded-full text-xs">
-                  데모 모드
+                <div className="px-3 py-1 bg-green-500/20 text-green-500 rounded-full text-xs">
+                  라이브
                 </div>
               </div>
             </div>
