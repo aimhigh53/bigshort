@@ -9,11 +9,13 @@ interface FilterPanelProps {
   maxInvestment: number
   failCountFilter: number[]
   safeOnly: boolean
+  sizeFilter: string[]
   onFilterChange: (filters: {
     minTurnoverRate: number
     maxInvestment: number
     failCountFilter: number[]
     safeOnly: boolean
+    sizeFilter: string[]
   }) => void
 }
 
@@ -22,6 +24,7 @@ export function FilterPanel({
   maxInvestment,
   failCountFilter,
   safeOnly,
+  sizeFilter,
   onFilterChange,
 }: FilterPanelProps) {
   const [isExpanded, setIsExpanded] = useState(true)
@@ -30,11 +33,22 @@ export function FilterPanel({
     const newFilter = failCountFilter.includes(count)
       ? failCountFilter.filter(c => c !== count)
       : [...failCountFilter, count]
-    onFilterChange({ minTurnoverRate, maxInvestment, failCountFilter: newFilter, safeOnly })
+    onFilterChange({ minTurnoverRate, maxInvestment, failCountFilter: newFilter, safeOnly, sizeFilter })
   }
 
+  const toggleSizeFilter = (size: string) => {
+    const newFilter = sizeFilter.includes(size)
+      ? sizeFilter.filter(s => s !== size)
+      : [...sizeFilter, size]
+    onFilterChange({ minTurnoverRate, maxInvestment, failCountFilter, safeOnly, sizeFilter: newFilter })
+  }
+
+  const sizeLabels = sizeFilter.length === 2 ? '전체 평형' :
+    sizeFilter.includes('large') ? '대형(85㎡↑)' :
+    sizeFilter.includes('small_medium') ? '중소형(85㎡↓)' : null
+
   const appliedFilters = [
-    '지방 대형',
+    sizeLabels,
     `회전율 ${minTurnoverRate}%↑`,
     `실투자 ${maxInvestment / 10000}만↓`,
     safeOnly ? '안전권리' : null,
@@ -91,7 +105,8 @@ export function FilterPanel({
                 minTurnoverRate: parseFloat(e.target.value),
                 maxInvestment,
                 failCountFilter,
-                safeOnly
+                safeOnly,
+                sizeFilter
               })}
               className="w-full"
             />
@@ -117,7 +132,8 @@ export function FilterPanel({
                 minTurnoverRate,
                 maxInvestment: parseInt(e.target.value),
                 failCountFilter,
-                safeOnly
+                safeOnly,
+                sizeFilter
               })}
               className="w-full"
             />
@@ -164,7 +180,8 @@ export function FilterPanel({
                 minTurnoverRate,
                 maxInvestment,
                 failCountFilter,
-                safeOnly: !safeOnly
+                safeOnly: !safeOnly,
+                sizeFilter
               })}
               className={cn(
                 'relative w-12 h-6 rounded-full transition-colors',
@@ -178,6 +195,30 @@ export function FilterPanel({
                 )}
               />
             </button>
+          </div>
+
+          {/* 평형 필터 */}
+          <div>
+            <span className="text-sm text-muted-foreground block mb-2">평형 선택</span>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { label: '대형 (85㎡ 초과)', value: 'large' },
+                { label: '중소형 (85㎡ 이하)', value: 'small_medium' },
+              ].map(({ label, value }) => (
+                <button
+                  key={value}
+                  onClick={() => toggleSizeFilter(value)}
+                  className={cn(
+                    'py-2 px-3 rounded-lg text-sm font-medium transition-colors',
+                    sizeFilter.includes(value)
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* 필터 적용 버튼 */}

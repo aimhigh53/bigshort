@@ -18,6 +18,7 @@ export async function GET(request: NextRequest) {
   const maxInvestment = parseInt(searchParams.get('maxInvestment') || '100000000')
   const failCounts = searchParams.get('failCounts')?.split(',').map(Number) || []
   const safeOnly = searchParams.get('safeOnly') === 'true'
+  const sizeFilter = searchParams.get('sizeFilter')?.split(',') || ['large', 'small_medium']
   const sido = searchParams.get('sido')
   const propertyType = searchParams.get('propertyType') || 'APT'
 
@@ -136,13 +137,23 @@ export async function GET(request: NextRequest) {
       }
     })
 
-    // 클라이언트 사이드 필터링 (회전율, 실투자금)
+    // 클라이언트 사이드 필터링 (회전율, 실투자금, 평형)
     const items = allItems.filter(item => {
       if (minTurnoverRate > 0 && (item.turnover_rate === null || item.turnover_rate < minTurnoverRate)) {
         return false
       }
       if (maxInvestment > 0 && item.required_investment > maxInvestment) {
         return false
+      }
+      // 평형 필터: large (85㎡ 초과), small_medium (85㎡ 이하)
+      if (sizeFilter.length > 0 && sizeFilter.length < 2) {
+        const isLarge = item.area_m2 > 85
+        if (sizeFilter.includes('large') && !isLarge) {
+          return false
+        }
+        if (sizeFilter.includes('small_medium') && isLarge) {
+          return false
+        }
       }
       return true
     })
@@ -155,6 +166,7 @@ export async function GET(request: NextRequest) {
         maxInvestment,
         failCounts,
         safeOnly,
+        sizeFilter,
         sido,
         propertyType,
       }

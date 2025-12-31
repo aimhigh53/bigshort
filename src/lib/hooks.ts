@@ -8,6 +8,7 @@ interface FilterParams {
   maxInvestment: number
   failCountFilter: number[]
   safeOnly: boolean
+  sizeFilter: string[]
 }
 
 interface UseAuctionItemsResult {
@@ -39,6 +40,7 @@ export function useAuctionItems(filters: FilterParams): UseAuctionItemsResult {
         maxInvestment: filters.maxInvestment.toString(),
         failCounts: filters.failCountFilter.join(','),
         safeOnly: filters.safeOnly.toString(),
+        sizeFilter: filters.sizeFilter.join(','),
         propertyType: 'APT',
       })
 

@@ -15,6 +15,7 @@ export default function Home() {
     maxInvestment: 100000000,
     failCountFilter: [0, 1, 2, 3],
     safeOnly: false,
+    sizeFilter: ['large', 'small_medium'],
   })
 
   const { items: filteredItems, loading, error, refetch, stats } = useAuctionItems(filters)
@@ -47,6 +48,7 @@ export default function Home() {
               maxInvestment={filters.maxInvestment}
               failCountFilter={filters.failCountFilter}
               safeOnly={filters.safeOnly}
+              sizeFilter={filters.sizeFilter}
               onFilterChange={setFilters}
             />
 
